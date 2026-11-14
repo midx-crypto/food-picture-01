@@ -114,10 +114,21 @@ def copy_atomic(src: str, dst: str) -> None:
         raise
 
 
-def verify_copy(src: str, dst: str) -> None:
-    """Re-read both files and demand identical hashes."""
+def check_output(dst: str, src: str) -> None:
+    """Validate the written file as the gate would: it must exist, be
+    a JPEG within the size cap, and hash identically to the source.
+    A hash match alone already implies the other two, but checking
+    each one separately names the exact failure if a write ever
+    corrupts the file, instead of a bare mismatch."""
     if not os.path.isfile(dst):
         raise fail(f"output {dst} is missing after the copy")
+    size = os.path.getsize(dst)
+    if size > MAX_BYTES:
+        raise fail(f"output {dst} is {size} bytes, over the cap")
+    with open(dst, "rb") as handle:
+        head = handle.read(len(JPEG_MAGIC))
+    if head != JPEG_MAGIC:
+        raise fail(f"output {dst} does not start with the JPEG magic bytes")
     if sha256_file(src) != sha256_file(dst):
         raise fail("output hash does not match the vendored image")
 
@@ -146,11 +157,11 @@ def main(argv: list[str] | None = None) -> int:
     dst = os.path.join(destination_dir(args), IMAGE_NAME)
     size = check_source(src)
     if args.verify:
-        verify_copy(src, dst)
+        check_output(dst, src)
         print(f"verified: {dst} matches the vendored image ({size} bytes)")
         return 0
     copy_atomic(src, dst)
-    verify_copy(src, dst)
+    check_output(dst, src)
     print(f"wrote {dst} ({size} bytes, sha256 {sha256_file(dst)[:16]}...)")
     return 0
 
